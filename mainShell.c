@@ -8,11 +8,13 @@
 #include <string.h>
 
 #define MAX_LINE 80 /* 80 chars per line, per command, should be enough. */
-#define MAX_BACKGROUND 100 //change this to link list
-/* The setup function below will not return any value, but it will just: read
-in the next command line; separate it into distinct arguments (using blanks as
-delimiters), and set the args array entries to point to the beginning of what
-will become null-terminated, C-style strings. */
+
+int numberofArgument = 0;
+
+struct background_process{
+  pid_t p_id;
+  struct background_process *next;
+};
 
 int isFileExists(const char* filename){
   struct stat buffer;
@@ -23,6 +25,10 @@ int isFileExists(const char* filename){
     return 0;
 }
 
+/* The setup function below will not return any value, but it will just: read
+in the next command line; separate it into distinct arguments (using blanks as
+delimiters), and set the args array entries to point to the beginning of what
+will become null-terminated, C-style strings. */
 void setup(char inputBuffer[], char *args[],int *background)
 {
     int length, /* # of characters in the command line */
@@ -54,7 +60,7 @@ void setup(char inputBuffer[], char *args[],int *background)
 	exit(-1);           /* terminate with error code of -1 */
     }
 
-	printf(">>%s<<",inputBuffer);
+	//printf(">>%s<<",inputBuffer);
     for (i=0;i<length;i++){ /* examine every character in the inputBuffer */
 
         switch (inputBuffer[i]){
@@ -87,9 +93,9 @@ void setup(char inputBuffer[], char *args[],int *background)
 	} /* end of switch */
      }    /* end of for */
      args[ct] = NULL; /* just in case the input line was > 80 */
-
-	for (i = 0; i <= ct; i++)
-		printf("args %d = %s\n",i,args[i]);
+     numberofArgument = ct;
+	//for (i = 0; i <= ct; i++)
+		//printf("args %d = %s\n",i,args[i]);
 } /* end of setup routine */
 
 int main(void)
@@ -98,59 +104,113 @@ int main(void)
   int background; /* equals 1 if a command is followed by '&' */
   char *args[MAX_LINE/2 + 1]; /*command line arguments */
 
-  pid_t pid=0;
+  pid_t pid = 0;
+  int execute;
 
-  //array that contains the background processes
-  int *backgroundArray=(int*)calloc(MAX_BACKGROUND, sizeof(int));
+  //link list's head that contains the background processes
+  struct background_process* head = NULL;
 
   while (1){
+    execute = 1;
     background = 0;
     printf("myshell: ");
     fflush(stdout);
     /*setup() calls exit() when Control-D is entered */
     setup(inputBuffer, args, &background);
 
-    pid = fork();
+    //exit
+    if(strcmp(inputBuffer, "exit") == 0){
+      execute = 0;
+      int backgroundRunner = 0;
 
-    if(pid == -1)
-      perror("fork error");
-    //child process
-    else if(pid == 0){
-      char *path =(char *) malloc(1000);
-      path = strcpy(path, getenv("PATH"));
-      char *token = strsep(&path, ":");
+      struct background_process* current = head;
+      while(current != NULL){
+        while(waitpid(-1,0,WNOHANG) > 0);
 
-      while(token != NULL){
-        char buffer[MAX_LINE] = "";
-        strcat(buffer, token);
-        strcat(buffer, "/");
-        strcat(buffer, args[0]);
-
-        if(isFileExists(buffer)){
-          args[-1] = NULL;
-          // this will be changed to execl
-          execv(buffer, args);
-          exit(0);
+        if(0 == kill(current->p_id, 0)){
+          backgroundRunner = 1;
+          fprintf(stderr, "There are still processes that run in the background\n");
+          break;
         }
-        token = strsep(&path, ":");
+        current = current->next;
       }
-      exit(0);
+
+      if(!backgroundRunner)
+        exit(0);
     }
-    //parent process
-    else{
-      //not background
-      if(!background){
-        waitpid(pid, NULL, 0);
+    //clr
+    if(strcmp(inputBuffer, "clr") == 0){
+      execute = 0;
+      system("@cls||clear");
+    }
+
+    if(execute){
+      pid = fork();
+
+      if(pid == -1)
+        perror("fork error");
+      //child process
+      else if(pid == 0){
+        char *path =(char *) malloc(1000);
+        path = strcpy(path, getenv("PATH"));
+        char *token = strsep(&path, ":");
+
+        while(token != NULL){
+          char buffer[MAX_LINE] = "";
+          strcat(buffer, token);
+          strcat(buffer, "/");
+          strcat(buffer, args[0]);
+
+          if(isFileExists(buffer)){
+            args[-1] = NULL;
+            // this will be changed to execl
+            execv(buffer, args);
+            exit(0);
+          }
+          token = strsep(&path, ":");
+        }
+        exit(0);
       }
+      //parent process
       else{
-        int i;
-        for(i = 0; i < MAX_BACKGROUND; i++){
-          if(backgroundArray[i] == 0){
-            break;
+        //not background
+        if(!background){
+          waitpid(pid, NULL, 0);
+        }
+        else{
+          struct background_process* temp = NULL;
+          struct background_process* temp2 = NULL;
+
+          if(head == NULL){
+            temp = (struct background_process*)malloc(sizeof(struct background_process));
+
+            temp->p_id = pid;
+            temp->next = NULL;
+            head = temp;
+            printf("%d running in background\n", pid);
+          }
+          else if(head->next == NULL){
+            temp = (struct background_process*)malloc(sizeof(struct background_process));
+
+            temp->p_id = pid;
+            temp->next = NULL;
+            head->next = temp;
+            printf("%d running in background\n", pid);
+          }
+          else{
+            temp2 = (struct background_process*)malloc(sizeof(struct background_process));
+
+            temp = head;
+            while(temp->next != NULL){
+              temp = temp->next;
+            }
+            temp2->p_id = pid;
+            temp2->next = NULL;
+
+            temp->next = temp2;
+            printf("%d running in background\n", pid);
           }
         }
-        backgroundArray[i] = pid;
-        printf("[%d] %d running in background\n", i, pid);
       }
     }
 
