@@ -218,10 +218,50 @@ int main(void)
         exit(0);
     }
     //clr
-    if (strcmp(inputBuffer, "clr") == 0)
-    {
+    if (strcmp(inputBuffer, "clr") == 0){
       execute = 0;
       system("@cls||clear");
+    }
+    //fg
+    if (strcmp(inputBuffer, "fg") == 0){
+      execute = 0;
+
+      int backgroundRunner = 0;
+
+      struct background_process *current = head;
+      while (current != NULL)
+      {
+        while (waitpid(-1, 0, WNOHANG) > 0)
+          ;
+
+        if (0 == kill(current->p_id, 0))
+        {
+          backgroundRunner = 1;
+          fprintf(stderr, "There are still processes that run in the background\n");
+          break;
+        }
+        current = current->next;
+      }
+
+      if(head == NULL || !backgroundRunner){
+        fprintf(stderr, "%s\n", "There is no background process...");
+      }
+      else{
+        //if there is background process
+        struct background_process *current = head;
+        while(current != NULL){
+          if(kill(current->p_id, 0) == 0){
+            fprintf(stderr, "%d %s\n", current->p_id, "running in the foreground now...");
+            //moving each background process to foreground
+            signal(SIGTTOU, SIG_IGN);
+            tcsetpgrp(current->p_id, current->p_id);
+            signal(SIGTTOU, SIG_DFL);
+            waitpid(current->p_id, NULL, WUNTRACED);
+
+            current = current->next;
+          }
+        }
+      }
     }
 
     if (execute)
