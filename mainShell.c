@@ -475,6 +475,7 @@ int main(void)
           }
         }
 
+        fprintf(stderr, "%s\n", "Unrecognized command...");
         exit(0);
       }
       //parent process
