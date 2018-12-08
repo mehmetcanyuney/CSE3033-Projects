@@ -197,6 +197,9 @@ int main(void)
       args[numberofArgument-1] = NULL;
       args[numberofArgument-2] = NULL;
       flag = 5;
+    }else{
+      flag = 0;
+      red_type = 0;
     }
 
     if (fd < 0)
@@ -287,7 +290,7 @@ int main(void)
         char *path = (char *)malloc(1000);
         path = strcpy(path, getenv("PATH"));
         char *token = strsep(&path, ":");
-
+        printf("%d\n",flag);
         while (token != NULL)
         {
           char buffer[MAX_LINE] = "";
@@ -303,7 +306,9 @@ int main(void)
               dup2(fd[0], STDOUT_FILENO);
               close(fd[0]);
               execv(buffer, args);
+              flag = 0;
               exit(0);
+              
             }
             if (flag == 3)
             {
@@ -311,6 +316,7 @@ int main(void)
               close(fd[1]);
               execv(buffer, args);
               exit(0);
+ 
             }
             if (flag == 4)
             {
@@ -318,6 +324,7 @@ int main(void)
               close(fd[0]);
               execv(buffer, args);
               exit(0);
+      
             }
             if (flag == 5)
             {
@@ -327,9 +334,11 @@ int main(void)
               close(fd[1]);
               execv(buffer, args);
               exit(0);
+     
             }
             else
             {
+             
               execv(buffer, args);
               exit(0);
             }
