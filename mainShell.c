@@ -290,7 +290,6 @@ int main(void)
         char *path = (char *)malloc(1000);
         path = strcpy(path, getenv("PATH"));
         char *token = strsep(&path, ":");
-        printf("%d\n",flag);
         while (token != NULL)
         {
           char buffer[MAX_LINE] = "";
