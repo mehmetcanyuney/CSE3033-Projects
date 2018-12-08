@@ -73,7 +73,10 @@ void setup(char inputBuffer[], char *args[], int *background, int *red_type)
     case ' ':
     case '>':
       if (inputBuffer[i] != ' ' && *red_type != 4)
-        *red_type += 1;
+        if(*red_type == 3)
+          *red_type = 5;
+        else
+          *red_type += 1;
       if (start != -1)
       {
         args[ct] = &inputBuffer[start]; /* set up pointer */
@@ -149,7 +152,7 @@ int main(void)
   char *args[MAX_LINE / 2 + 1]; /*command line arguments */
   int red_type = 0;             /* redirection type '>' = 1 , '>>' = 2, '<' = 3, '2>' = 4 default = 0,|| the fifth case will be done*/
   int flag = 0;
-  int fd;
+  int fd[2];
   pid_t pid = 0;
   int execute;
 
@@ -168,13 +171,13 @@ int main(void)
 
     if (red_type == 1)
     {
-      fd = open(args[numberofArgument - 1], O_CREAT | O_TRUNC | O_WRONLY, S_IRUSR | S_IWUSR);
+      fd[0] = open(args[numberofArgument - 1], O_CREAT | O_TRUNC | O_WRONLY, S_IRUSR | S_IWUSR);
       args[numberofArgument-1] = NULL;
       flag = 1;
     }
     else if (red_type == 2 || red_type == 4)
     {
-      fd = open(args[numberofArgument - 1], O_CREAT | O_APPEND | O_WRONLY, S_IRUSR | S_IWUSR);
+      fd[0] = open(args[numberofArgument - 1], O_CREAT | O_APPEND | O_WRONLY, S_IRUSR | S_IWUSR);
       args[numberofArgument-1] = NULL;
       if(red_type == 4)
         flag = 4;
@@ -183,9 +186,17 @@ int main(void)
     }
     else if (red_type == 3)
     {
-      fd = open(args[numberofArgument - 1], O_RDONLY, S_IRUSR | S_IWUSR);
+      fd[1] = open(args[numberofArgument - 1], O_RDONLY, S_IRUSR | S_IWUSR);
       args[numberofArgument-1] = NULL;
+      
       flag = 3;
+    }else if (red_type == 5)
+    {
+      fd[0] = open(args[numberofArgument-1], O_CREAT | O_TRUNC | O_WRONLY, S_IRUSR | S_IWUSR);
+      fd[1] = open(args[numberofArgument-2], O_RDONLY, S_IRUSR | S_IWUSR);
+      args[numberofArgument-1] = NULL;
+      args[numberofArgument-2] = NULL;
+      flag = 5;
     }
 
     if (fd < 0)
@@ -289,22 +300,31 @@ int main(void)
             // this will be changed to execl
             if (flag == 1 || flag == 2)
             {
-              dup2(fd, STDOUT_FILENO);
-              close(fd);
+              dup2(fd[0], STDOUT_FILENO);
+              close(fd[0]);
               execv(buffer, args);
               exit(0);
             }
-            else if (flag == 3)
+            if (flag == 3)
             {
-              dup2(fd, STDIN_FILENO);
-              close(fd);
+              dup2(fd[1], STDIN_FILENO);
+              close(fd[1]);
               execv(buffer, args);
               exit(0);
             }
-            else if (flag == 4)
+            if (flag == 4)
             {
-              dup2(fd, STDERR_FILENO);
-              close(fd);
+              dup2(fd[0], STDERR_FILENO);
+              close(fd[0]);
+              execv(buffer, args);
+              exit(0);
+            }
+            if (flag == 5)
+            {
+              dup2(fd[1], STDIN_FILENO);
+              dup2(fd[0], STDOUT_FILENO);
+              close(fd[0]);
+              close(fd[1]);
               execv(buffer, args);
               exit(0);
             }
