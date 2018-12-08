@@ -201,7 +201,7 @@ int main(void)
 
     if (fd < 0)
     {
-      perror("open failed !");
+      fprintf(stderr,"Open failed!\n");
     }
 
     //exit
