@@ -9,8 +9,10 @@
 #include <fcntl.h>
 
 #define MAX_LINE 80 /* 80 chars per line, per command, should be enough. */
+#define MAX_ALIAS 2000 //Max Number of alias that can be opened in the shell
 
 int numberofArgument = 0;
+pid_t parentPID = -1;
 
 struct background_process
 {
@@ -18,6 +20,28 @@ struct background_process
   struct background_process *next;
 };
 
+//alias struct
+struct alias_list{
+  char *arguments[MAX_LINE / 2 + 1];
+  char functionName[128];
+};
+
+//remove one character
+char* remChar(char* str, char chr){
+	char* result = (char *)malloc(10);
+	int location = 0;
+	for(int i = 0; i < sizeof(str); i++){
+		if(str[i] != chr){
+			result[location] = str[i];
+			location++;
+		}
+	}
+	result[location] = '\0';
+
+	return result;
+}
+
+//checking is command exist or not (in the path)
 int isFileExists(const char *filename)
 {
   struct stat buffer;
@@ -26,6 +50,20 @@ int isFileExists(const char *filename)
     return 1;
   else // -1
     return 0;
+}
+
+void stopProcess(int signalNbr){
+  write(STDERR_FILENO, "\n", 1);
+}
+
+//executeProgress(buffer, args, numberofArgument - background);
+void executeProgress(char *buffer, char **args, int numberofArgument){
+  for(int i = numberofArgument; i < 32; i++){
+    args[i] = NULL;
+  }
+  execl(buffer, args[0], args[1], args[2], args[3], args[4], args[5], args[6], args[7], args[8], args[9], args[10],
+                args[11], args[12], args[13], args[14], args[15], args[16], args[17], args[18], args[19], args[20],
+                args[21], args[22], args[23], args[24], args[25], args[26], args[27], args[28], args[29], args[30], args[31], NULL);
 }
 
 /* The setup function below will not return any value, but it will just: read
@@ -155,9 +193,29 @@ int main(void)
   int fd[2];
   pid_t pid = 0;
   int execute;
+  struct alias_list al[MAX_ALIAS];
+  int current_al = 0;
 
   //link list's head that contains the background processes
   struct background_process *head = NULL;
+
+  //for ctrl+Z(^Z) configuration
+  struct sigaction action;
+  int status;
+
+  action.sa_handler = stopProcess;
+  action.sa_flags = 0;
+  status = sigemptyset(&action.sa_mask);
+
+  if(status == -1){
+      fprintf(stderr, "%s\n", "Failed to initialize signal set");
+      exit(1);
+  }
+  status = sigaction(SIGTSTP, &action, NULL);
+  if(status == -1){
+    fprintf(stderr, "%s\n", "Failed to set signal handler for SIGTSTP");
+    exit(1);
+  }
 
   while (1)
   {
@@ -188,7 +246,7 @@ int main(void)
     {
       fd[1] = open(args[numberofArgument - 1], O_RDONLY, S_IRUSR | S_IWUSR);
       args[numberofArgument-1] = NULL;
-      
+
       flag = 3;
     }else if (red_type == 5)
     {
@@ -207,6 +265,56 @@ int main(void)
       fprintf(stderr,"Open failed!\n");
     }
 
+    //alias
+    if(strcmp(args[0], "alias") == 0){
+      if(numberofArgument == 1){
+        fprintf(stderr, "%s\n", "Missing number of arguments");
+        continue;
+      }
+      execute = 0;
+      if(strcmp(args[1], "-l") == 0){
+        //list all alias functions
+        for(int i = 0; i < current_al; i++){
+          if(strcmp(al[i].functionName, " ") == 0){
+            continue;
+          }
+          printf("\t\"");
+          for(int j=0; j < strlen(*al[i].arguments); j++){
+            if(al[i].arguments[j] == NULL){
+              continue;
+            }
+            printf("%s", al[i].arguments[j]);
+            if((j + 1) == strlen(*al[i].arguments))
+              break;
+            printf("%s", " ");
+          }
+          printf("\"");
+          printf("\t%s\n", al[i].functionName);
+        }
+      }
+      else{
+        strcpy(al[current_al].functionName, args[numberofArgument - 1]);
+
+        int tempLocation = numberofArgument - 2;
+
+        for(int i = 0; i < tempLocation; i++){
+          al[current_al].arguments[i] = remChar(args[i+1], '\"');
+        }
+
+        current_al = current_al + 1;
+      }
+    }
+    //unalias
+    if(strcmp(inputBuffer, "unalias") == 0){
+      execute = 0;
+
+      for(int i = 0; i < MAX_ALIAS; i++){
+        if(strcmp(args[1], al[i].functionName) == 0){
+          strcpy(al[i].functionName, " ");
+          break;
+        }
+      }
+    }
     //exit
     if (strcmp(inputBuffer, "exit") == 0)
     {
@@ -304,26 +412,26 @@ int main(void)
             {
               dup2(fd[0], STDOUT_FILENO);
               close(fd[0]);
-              execv(buffer, args);
+              executeProgress(buffer, args, numberofArgument - background);
               flag = 0;
               exit(0);
-              
+
             }
             if (flag == 3)
             {
               dup2(fd[1], STDIN_FILENO);
               close(fd[1]);
-              execv(buffer, args);
+              executeProgress(buffer, args, numberofArgument - background);
               exit(0);
- 
+
             }
             if (flag == 4)
             {
               dup2(fd[0], STDERR_FILENO);
               close(fd[0]);
-              execv(buffer, args);
+              executeProgress(buffer, args, numberofArgument - background);
               exit(0);
-      
+
             }
             if (flag == 5)
             {
@@ -331,19 +439,42 @@ int main(void)
               dup2(fd[0], STDOUT_FILENO);
               close(fd[0]);
               close(fd[1]);
-              execv(buffer, args);
+              executeProgress(buffer, args, numberofArgument - background);
               exit(0);
-     
+
             }
             else
             {
-             
-              execv(buffer, args);
+              executeProgress(buffer, args, numberofArgument - background);
+              //execv(buffer, args);
               exit(0);
             }
           }
           token = strsep(&path, ":");
         }
+
+        for(int i = 0; i < MAX_ALIAS; i++){
+          if(strcmp(al[i].functionName, args[0]) == 0){
+            char *path = (char *)malloc(1000);
+            path = strcpy(path, getenv("PATH"));
+            char *token = strsep(&path, ":");
+
+            while (token != NULL)
+            {
+              char buffer[MAX_LINE] = "";
+              strcat(buffer, token);
+              strcat(buffer, "/");
+              strcat(buffer, al[i].arguments[0]);
+              if (isFileExists(buffer))
+              {
+                args[-1] = NULL;
+                executeProgress(buffer, al[i].arguments, strlen(*al[i].arguments));
+              }
+              token = strsep(&path, ":");
+            }
+          }
+        }
+
         exit(0);
       }
       //parent process
