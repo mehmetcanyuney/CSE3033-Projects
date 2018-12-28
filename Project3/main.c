@@ -4,6 +4,7 @@
 #include <math.h>
 #include <string.h>
 
+//arguments that is given by the user
 int matrixSize;
 int generateSize, logSize, modSize, addSize;
 
@@ -61,6 +62,9 @@ pthread_t *addThread;
 
 //Generate Thread
 void *generateOperation(void *arg){
+  //firstly, thread looks if the first global queue created or not
+  //if its not created , creates it
+  //if its already created, does nothing.
   pthread_mutex_lock(&mutexque);
   if(que1Created == 0){
     que = (queue *)malloc(((matrixSize / 5) * (matrixSize / 5)) * sizeof(queue));
@@ -68,17 +72,14 @@ void *generateOperation(void *arg){
     que1Created = 1;
   }
   pthread_mutex_unlock(&mutexque);
-  //printf("========================================%d starts working %d ==================================================================\n", (int)arg, queLoc);
+  // thread works until all submatrixes created.
   while(queLoc < ((matrixSize / 5) * (matrixSize / 5))){
     int x;
     int y;
     pthread_mutex_lock(&mutexque);
-    /*
-    if(queLoc >= ((matrixSize / 5) * (matrixSize / 5))){
-        pthread_mutex_unlock(&mutexque);
-        break;
-    }
-    */
+    //findsthe submatrixes that will be created.
+    //does it in critical section cause only one of the thread
+    //must operate on this location
     rowLoc += 5;
     if(rowLoc == matrixSize){
       rowLoc = 0;
@@ -89,9 +90,11 @@ void *generateOperation(void *arg){
     y = colLoc;
     pthread_mutex_unlock(&mutexque);
 
+    //ends the thread is all submatrixes created
     if(colLoc >= matrixSize){
       pthread_exit((void*) 0);
     }
+    //creates the randomly generated submatrix
     int *tempMatrix;
     tempMatrix = (int *)malloc(25 * sizeof(int));
 
@@ -107,11 +110,14 @@ void *generateOperation(void *arg){
     temp.mod = 1;
 
     pthread_mutex_lock(&mutexque);
+    //adds the randomly generated matrix to the queue so both log and mod thread can work
     que[queLoc] = temp;
 
     queLoc += 1;
     pthread_mutex_unlock(&mutexque);
 
+    //Printing the results in critical section in order to
+    //block the 2 printing done in same time
     pthread_mutex_lock(&mutexprint);
     // Printing the result
     printf("Generator_%d\t\"Generator_%d generated following matrix:[", (int)arg, (int)arg);
@@ -133,6 +139,8 @@ void *generateOperation(void *arg){
 
 //Log Thread
 void *logOperation(void *arg){
+  //check if global result matrix is created or not
+  //if not first log thread creates the matrix
   pthread_mutex_lock(&mutexlog);
   if(matrixCreated == 0){
     matrix2D = (int *)malloc(((matrixSize * matrixSize) * sizeof(int)));
@@ -142,6 +150,7 @@ void *logOperation(void *arg){
 
   int allwriten = 0;
   while(allwriten != ((matrixSize / 5) * (matrixSize / 5))){
+    // waits until global queue 1 created by first generate thread
     if(que1Created == 0){
       continue;
     }
@@ -157,12 +166,12 @@ void *logOperation(void *arg){
         loc = i;
         break;
       }
-      // if all of submatrixes transfered to the real matrix
+      // if all of submatrixes transfered to the global result matrix
       else if(que[i].log == 2){
         allwriten++;
       }
     }
-
+    // check if any generate matrix worked or not if not waits for it
     if(loc == -1){
       pthread_mutex_unlock(&mutexlog);
       continue;
@@ -172,6 +181,7 @@ void *logOperation(void *arg){
     int x = que[loc].xloc;
     int y = que[loc].yloc;
 
+    //transferes the submatrixes into global result matrix
     for(int j = 0; j < 5; j++){
       for(int k = 0; k < 5; k++){
         matrix2D[(x + j) * matrixSize + (y + k)] = que[loc].matrix[(j * 5) + k];
@@ -179,6 +189,7 @@ void *logOperation(void *arg){
       }
     }
 
+    //printing the result
     pthread_mutex_lock(&mutexprint);
     printf("Log_%d\t\"Log_%d operate on [%d,%d] submatrix\"\n\n", (int)arg, (int)arg, (x/5), (y/5));
     pthread_mutex_unlock(&mutexprint);
@@ -189,6 +200,8 @@ void *logOperation(void *arg){
 
 //Mod Thread
 void *modOperation(void *arg){
+  //same procedure with log operation
+  //here first mod thread creates the global queue 2
   pthread_mutex_lock(&mutexmod);
   if(que2Created == 0){
     que2 = (queue2 *)malloc(((matrixSize / 5) * (matrixSize / 5)) * sizeof(queue2));
@@ -199,6 +212,7 @@ void *modOperation(void *arg){
 
   int allModOperated = 0;
   while(allModOperated != ((matrixSize / 5) * (matrixSize / 5))){
+    //same procedure with log operation
     if(que1Created == 0){
       continue;
     }
@@ -223,6 +237,7 @@ void *modOperation(void *arg){
     }
     pthread_mutex_unlock(&mutexmod);
 
+    //creates the submatrix that contains the mod values
     int *tempMatrix;
     tempMatrix = (int *)malloc(25 * sizeof(int));
 
@@ -238,6 +253,7 @@ void *modOperation(void *arg){
     temp.yloc = que[loc].yloc;
     temp.add = 1;
 
+    //adds to global queue 2 so add threads can work
     pthread_mutex_lock(&mutexmod);
       que2[que2Size] = temp;
 
@@ -265,6 +281,7 @@ void *modOperation(void *arg){
 
 //Add Thread
 void *addOperation(void *arg){
+  //same procedure with log operation
   int allSummed = 0;
   while(allSummed != ((matrixSize / 5) * (matrixSize / 5))){
     if(que2Created == 0){
@@ -274,11 +291,13 @@ void *addOperation(void *arg){
     allSummed = 0;
     pthread_mutex_lock(&mutexadd);
     for(int i = 0; i < ((matrixSize / 5) * (matrixSize / 5)); i++){
+      //find the location to be added in queue 2 that contains mod submatrixes
       if(que2[i].add == 1){
         que2[i].add = 2;
         loc = i;
         break;
       }
+      //check if all mod submatrixes added or not
       else if(que2[i].add == 2){
         allSummed++;
       }
@@ -290,17 +309,20 @@ void *addOperation(void *arg){
     }
     pthread_mutex_unlock(&mutexadd);
 
+    //calculate the localsum for specific working thread
     int localsum = 0;
     for(int i = 0; i < 25; i++){
       localsum = localsum + que2[loc].matrix[i];
     }
 
+    //creates printing values and updates the global sum
     pthread_mutex_lock(&mutexadd);
     int oldSum = sum;
     sum = sum + localsum;
     int printedSum = sum;
     pthread_mutex_unlock(&mutexadd);
 
+    //prints the result
     pthread_mutex_lock(&mutexprint);
     printf("Add_%d\t\"Add_%d has localsum: %d by [%d,%d] submatrix, globalsum before/after update: %d/%d\"\n\n", (int)arg, (int)arg, localsum, (que2[loc].xloc/5), (que2[loc].yloc/5), oldSum, printedSum);
     pthread_mutex_unlock(&mutexprint);
