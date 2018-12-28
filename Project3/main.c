@@ -16,9 +16,20 @@ typedef struct{
   int mod;      //check if mod operation done
 } queue;
 
+// Struct for queue2
+typedef struct{
+  int *matrix;  //5x5 matrix
+  int xloc;     //x_location on global matrix
+  int yloc;     //y_location on global matrix
+  int add;      //check if add operation done
+} queue2;
+
 //global queue1
 queue *que;
 int queLoc;
+//global queue2
+queue2 *que2;
+int que2Size;
 
 //global Location of matrix that is going to be generated
 int rowLoc;
@@ -106,14 +117,14 @@ void *generateOperation(void *arg){
     printf("Generator_%d\t\"Generator_%d generated following matrix:[", (int)arg, (int)arg);
     for(int i = 0; i < 25; i++){
       if(i != 0 && (i%5 == 0)){
-        printf("\n\t\t\t\t\t\t\t");
+        printf("\n\t\t\t\t\t\t\t ");
       }
       if(i == 24)
         printf("%d", tempMatrix[i]);
       else
         printf("%d,", tempMatrix[i]);
     }
-    printf("]\n\t\tThis matrix is [%d,%d] submatrix\n\n", (x/5), (y/5));
+    printf("]\n\t\tThis matrix is [%d,%d] submatrix\"\n\n", (x/5), (y/5));
     pthread_mutex_unlock(&mutexprint);
   }
 
@@ -169,7 +180,7 @@ void *logOperation(void *arg){
     }
 
     pthread_mutex_lock(&mutexprint);
-    printf("Log_%d\t\"Log_%d operate on [%d,%d] submatrix\n", (int)arg, (int)arg, (x/5), (y/5));
+    printf("Log_%d\t\"Log_%d operate on [%d,%d] submatrix\"\n\n", (int)arg, (int)arg, (x/5), (y/5));
     pthread_mutex_unlock(&mutexprint);
   }
 
@@ -178,20 +189,130 @@ void *logOperation(void *arg){
 
 //Mod Thread
 void *modOperation(void *arg){
+  pthread_mutex_lock(&mutexmod);
+  if(que2Created == 0){
+    que2 = (queue2 *)malloc(((matrixSize / 5) * (matrixSize / 5)) * sizeof(queue2));
+    que2Size = 0;
+    que2Created = 1;
+  }
+  pthread_mutex_unlock(&mutexmod);
 
+  int allModOperated = 0;
+  while(allModOperated != ((matrixSize / 5) * (matrixSize / 5))){
+    if(que1Created == 0){
+      continue;
+    }
+    //same procedure as log operation
+    int loc = -1;
+    allModOperated = 0;
+    pthread_mutex_lock(&mutexmod);
+    for(int i = 0; i < ((matrixSize / 5) * (matrixSize / 5)); i++){
+      if(que[i].mod == 1){
+        que[i].mod = 2;
+        loc = i;
+        break;
+      }
+      else if(que[i].mod == 2){
+        allModOperated++;
+      }
+    }
+
+    if(loc == -1){
+      pthread_mutex_unlock(&mutexmod);
+      continue;
+    }
+    pthread_mutex_unlock(&mutexmod);
+
+    int *tempMatrix;
+    tempMatrix = (int *)malloc(25 * sizeof(int));
+
+    int divider = que[loc].matrix[0];
+
+    for(int i = 0; i < 25; i++){
+      tempMatrix[i] = que[loc].matrix[i] % divider;
+    }
+
+    queue2 temp;
+    temp.matrix = tempMatrix;
+    temp.xloc = que[loc].xloc;
+    temp.yloc = que[loc].yloc;
+    temp.add = 1;
+
+    pthread_mutex_lock(&mutexmod);
+      que2[que2Size] = temp;
+
+      que2Size++;
+    pthread_mutex_unlock(&mutexmod);
+
+    pthread_mutex_lock(&mutexprint);
+    // Printing the result
+    printf("Mod_%d\t\"Mod_%d generated following matrix:[", (int)arg, (int)arg);
+    for(int i = 0; i < 25; i++){
+      if(i != 0 && (i%5 == 0)){
+        printf("\n\t\t\t\t\t   ");
+      }
+      if(i == 24)
+        printf("%d", tempMatrix[i]);
+      else
+        printf("%d,", tempMatrix[i]);
+    }
+    printf("]\n\t\tThis matrix is [%d,%d] submatrix\"\n\n", (temp.xloc/5), (temp.yloc/5));
+    pthread_mutex_unlock(&mutexprint);
+  }
+
+  pthread_exit((void *) 0);
 }
 
 //Add Thread
 void *addOperation(void *arg){
+  int allSummed = 0;
+  while(allSummed != ((matrixSize / 5) * (matrixSize / 5))){
+    if(que2Created == 0){
+      continue;
+    }
+    int loc = -1;
+    allSummed = 0;
+    pthread_mutex_lock(&mutexadd);
+    for(int i = 0; i < ((matrixSize / 5) * (matrixSize / 5)); i++){
+      if(que2[i].add == 1){
+        que2[i].add = 2;
+        loc = i;
+        break;
+      }
+      else if(que2[i].add == 2){
+        allSummed++;
+      }
+    }
 
+    if(loc == -1){
+      pthread_mutex_unlock(&mutexadd);
+      continue;
+    }
+    pthread_mutex_unlock(&mutexadd);
+
+    int localsum = 0;
+    for(int i = 0; i < 25; i++){
+      localsum = localsum + que2[loc].matrix[i];
+    }
+
+    pthread_mutex_lock(&mutexadd);
+    int oldSum = sum;
+    sum = sum + localsum;
+    int printedSum = sum;
+    pthread_mutex_unlock(&mutexadd);
+
+    pthread_mutex_lock(&mutexprint);
+    printf("Add_%d\t\"Add_%d has localsum: %d by [%d,%d] submatrix, globalsum before/after update: %d/%d\"\n\n", (int)arg, (int)arg, localsum, (que2[loc].xloc/5), (que2[loc].yloc/5), oldSum, printedSum);
+    pthread_mutex_unlock(&mutexprint);
+  }
+
+  pthread_exit((void *) 0);
 }
 
 int main(int argc, char *argv[]){
   //random number geration
   time_t t;
   srand((unsigned) time(&t));
-
-  void *status;
 
   //check if requed number of arguments given
   if(argc != 8){
@@ -216,6 +337,12 @@ int main(int argc, char *argv[]){
     }
   }
 
+  //initilazing threads return values
+  void *generateStatus[generateSize];
+  void *logStatus[logSize];
+  void *modStatus[modSize];
+  void *addStatus[addSize];
+
   //initilazing mutex-es
   pthread_mutex_init(&mutexque, NULL);
   pthread_mutex_init(&mutexprint, NULL);
@@ -237,6 +364,7 @@ int main(int argc, char *argv[]){
   matrixCreated = 0;
   que1Created = 0;
   que2Created = 0;
+  sum = 0;
 
   rowLoc = -5;
   colLoc = 0;
@@ -259,25 +387,73 @@ int main(int argc, char *argv[]){
   }
   // Waiting for Generate Threads to end...
   for(int k = 0; k < generateSize; k++){
-    pthread_join(generateThread[k], &status);
+    pthread_join(generateThread[k], &generateStatus[k]);
   }
   // Waiting for Log Threads to end...
   for(int k = 0; k < logSize; k++){
-    pthread_join(logThread[k], &status);
+    pthread_join(logThread[k], &logStatus[k]);
   }
   // Waiting for Mod Threads to end...
   for(int k = 0; k < modSize; k++){
-    pthread_join(modThread[k], &status);
+    pthread_join(modThread[k], &modStatus[k]);
   }
   // Waiting for Add Threads to end...
   for(int k = 0; k < addSize; k++){
-    pthread_join(addThread[k], &status);
+    pthread_join(addThread[k], &addStatus[k]);
+  }
+  //Checking the result of generate threads
+  for(int i = 0; i < generateSize; i++){
+    if((int)generateStatus[i] != 0){
+      fprintf(stderr, "%s\n", "There is something wrong with one of the Generation Thread");
+      pthread_mutex_destroy(&mutexque);
+      pthread_mutex_destroy(&mutexprint);
+      pthread_mutex_destroy(&mutexlog);
+      pthread_mutex_destroy(&mutexmod);
+      pthread_mutex_destroy(&mutexadd);
+      pthread_exit(NULL);
+    }
+  }
+  //Checking the result of log threads
+  for(int i = 0; i < logSize; i++){
+    if((int)logStatus[i] != 0){
+      fprintf(stderr, "%s\n", "There is something wrong with one of the Log Thread");
+      pthread_mutex_destroy(&mutexque);
+      pthread_mutex_destroy(&mutexprint);
+      pthread_mutex_destroy(&mutexlog);
+      pthread_mutex_destroy(&mutexmod);
+      pthread_mutex_destroy(&mutexadd);
+      pthread_exit(NULL);
+    }
+  }
+  //Checking the result of mod threads
+  for(int i = 0; i < modSize; i++){
+    if((int)modStatus[i] != 0){
+      fprintf(stderr, "%s\n", "There is something wrong with one of the Mod Thread");
+      pthread_mutex_destroy(&mutexque);
+      pthread_mutex_destroy(&mutexprint);
+      pthread_mutex_destroy(&mutexlog);
+      pthread_mutex_destroy(&mutexmod);
+      pthread_mutex_destroy(&mutexadd);
+      pthread_exit(NULL);
+    }
+  }
+  //Checking the result of add threads
+  for(int i = 0; i < addSize; i++){
+    if((int)addStatus[i] != 0){
+      fprintf(stderr, "%s\n", "There is something wrong with one of the Add Thread");
+      pthread_mutex_destroy(&mutexque);
+      pthread_mutex_destroy(&mutexprint);
+      pthread_mutex_destroy(&mutexlog);
+      pthread_mutex_destroy(&mutexmod);
+      pthread_mutex_destroy(&mutexadd);
+      pthread_exit(NULL);
+    }
   }
 
   // Creating file and writing the created matrix (from Log Threads)
   FILE *fp;
   fp = fopen("output.txt", "w");
-  fprintf(fp, "%s\n\t\t\t\t\t[", "The matrix is");
+  fprintf(fp, "%s\n\t\t[", "The matrix is");
   for(int i = 0; i < matrixSize; i++){
     for(int j = 0; j < matrixSize; j++){
       if((i == (matrixSize - 1)) && (j == (matrixSize - 1))){
@@ -291,7 +467,7 @@ int main(int argc, char *argv[]){
       fprintf(fp, "]\n");
     }
     else{
-      fprintf(fp, "\n\t\t\t\t\t");
+      fprintf(fp, "\n\t\t ");
     }
   }
   fprintf(fp, "\nThe global sum is: %d.\n", sum);
